@@ -48,7 +48,11 @@ final class FormUITests: XCTestCase {
 
     func testSettingsShowsDataControls() {
         app.navigationBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.buttons["Export data"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        // The data section is near the bottom; lists only create rows once they're scrolled into view.
+        let export = app.buttons["Export data"]
+        for _ in 0..<6 where !export.exists { app.swipeUp() }
+        XCTAssertTrue(export.exists)
         XCTAssertTrue(app.buttons["Delete all data"].exists)
     }
 }

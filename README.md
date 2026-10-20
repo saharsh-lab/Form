@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phases 1–6 of 7 (foundation, nutrition, workouts, progress, widgets and Live Activities, settings and data tools).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: all 7 phases implemented.** The app, widget extension and every test target compile on CI (Xcode 16, iOS simulator). It has not yet been tried on a physical device. See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -34,6 +34,10 @@ On first launch Form creates its local database and seeds an editable exercise c
 ### App Group note
 
 Form keeps its database in the App Group container, and after every save it writes a small `widget-snapshot.json` there for the widgets. Widgets read only that snapshot and never open the database. Simulators always allow App Groups. On a device, App Groups need a paid Apple Developer team. A free personal team can't sign the App Group entitlement, so Xcode will report a signing error. In that case delete the two `com.apple.security.application-groups` entries (under the Form and FormWidgets targets) in `project.yml` and run `xcodegen generate` again. Form then falls back to its own app container: everything except the Home Screen and Lock Screen widgets keeps working, including the Live Activity, which the app updates directly.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`, on a GitHub macOS runner with Xcode 16. It runs the FormCore tests with `swift test`, generates the project with XcodeGen, builds the app and widget extension for an iPhone simulator without code signing, then runs the unit tests and the UI tests. If the build fails, the build log is uploaded as an artifact.
 
 ## Tests
 
@@ -89,7 +93,10 @@ Form/
 │   └── Resources/               Asset catalogue
 ├── Shared/                      Compiled into app and widgets: App Group, Live Activity attributes
 ├── FormWidgets/                 WidgetKit extension: widgets and the workout Live Activity
-└── FormTests/                   App-hosted SwiftData tests
+├── FormTests/                   App-hosted SwiftData tests
+├── FormUITests/                 UI tests (in-memory store)
+├── docs/                        RELEASE.md (App Store steps), QA.md (device checklist)
+└── .github/workflows/ci.yml     Build and test on macOS for every PR
 ```
 
 ### Architecture
@@ -194,16 +201,21 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - **UI tests** (`FormUITests`, run against an in-memory store): every tab opens, log body weight from Today, start and discard an empty workout, and Settings shows the data controls.
 - **Tests:** JSON export completeness and nulls, CSV blanks and quoting, export files, delete-all resetting to a fresh install (FormTests); CSV escaping, number and date formatting, reminder scheduling (FormCore).
 
-### Not yet implemented
+### Phase 7: done
 
-| Phase | Remaining work |
-|---|---|
-| 7 | Visual polish, performance, device testing, release documentation |
+- **CI** on GitHub Actions: FormCore tests, an app and widget build, unit tests and UI tests for every pull request.
+- **Privacy manifests** (`PrivacyInfo.xcprivacy`) for the app and widget extension: no tracking, no collected data, no required-reason APIs.
+- **Release docs:** [docs/RELEASE.md](docs/RELEASE.md) covers signing, archiving, App Store Connect fields, review notes, the description and screenshots. [docs/QA.md](docs/QA.md) is a full device checklist. There is also a [CHANGELOG.md](CHANGELOG.md).
+- **Still to do by a person:** a final app icon, screenshots, and the device QA pass. These need a real iPhone and a designer's eye, so they aren't claimed here.
+
+### Out of scope for this version
+
+HealthKit, iCloud sync, Apple Watch, and widget or Live Activity buttons that change data (for example "Skip rest").
 
 ## Verification and limitations
 
-- **This code has not yet been compiled.** It was written in a Linux environment with no Xcode and no Swift toolchain, so neither the app nor the tests have been built or run. Every Swift file was checked with a Swift syntax parser (tree-sitter-swift) and parses cleanly, but type errors can only be caught by Xcode. If a build reports errors, please share the messages so they can be fixed before later phases build on top.
-- Not yet tested on simulators or devices, in either theme, or at large Dynamic Type sizes.
+- **Compiled and tested on CI, not yet on a device.** The code was written without a local Mac. GitHub Actions now builds the app and widget extension with Xcode 16 for the iOS simulator and runs the FormCore, unit and UI tests on every pull request (see [Continuous integration](#continuous-integration)). CI is green: everything builds, and all FormCore tests, 47 app unit tests and 4 UI tests pass. The first run caught one real bug (the JSON export left out `null`s), which is fixed.
+- Not yet checked by a person on a device, in either theme, or at large Dynamic Type sizes. [docs/QA.md](docs/QA.md) is the checklist for that.
 - The app icon is a simple placeholder.
 - HealthKit is intentionally out of scope for the MVP.
 
