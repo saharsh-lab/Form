@@ -1,8 +1,9 @@
 import Foundation
 import UserNotifications
+import FormCore
 
 /// Local notifications only; nothing is sent to a server.
-/// Used for the optional rest-timer alert and (Phase 6) workout reminders.
+/// Used for the optional rest-timer alert and the optional daily logging reminder.
 @MainActor
 enum NotificationScheduler {
     private static let restTimerIdentifier = "form.rest-timer"
@@ -44,5 +45,36 @@ enum NotificationScheduler {
     static func cancelRestTimerAlert() {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [restTimerIdentifier])
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [restTimerIdentifier])
+    }
+
+    // MARK: Daily logging reminder
+
+    private static let reminderPrefix = "form.reminder."
+
+    /// Replaces the pending logging reminders with one per date.
+    static func scheduleLoggingReminders(at dates: [Date], calendar: Calendar = .current) async {
+        await cancelLoggingReminders()
+        for date in dates {
+            let content = UNMutableNotificationContent()
+            content.title = "Log today's food"
+            content.body = "Nothing is in your Form diary yet today."
+            content.sound = .default
+            content.interruptionLevel = .passive
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let identifier = reminderPrefix + CSVTable.day(date)
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
+        }
+    }
+
+    static func cancelLoggingReminders() async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(reminderPrefix) })
+    }
+
+    static func cancelAll() {
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 }

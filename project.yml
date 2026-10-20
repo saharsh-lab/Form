@@ -119,12 +119,26 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(FORM_BUNDLE_ID).tests
 
+  FormUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: FormUITests
+    dependencies:
+      - target: Form
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(FORM_BUNDLE_ID).uitests
+        TEST_TARGET_NAME: Form
+
 schemes:
   Form:
     build:
       targets:
         Form: all
         FormTests: [test]
+        FormUITests: [test]
     run:
       config: Debug
     test:
@@ -132,5 +146,6 @@ schemes:
       gatherCoverageData: true
       targets:
         - FormTests
+        - FormUITests
     archive:
       config: Release

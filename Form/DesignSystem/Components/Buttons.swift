@@ -4,6 +4,7 @@ import SwiftUI
 struct FormPrimaryButtonStyle: ButtonStyle {
     var fullWidth = true
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -17,7 +18,7 @@ struct FormPrimaryButtonStyle: ButtonStyle {
                     .fill(Color.formAccent)
             )
             .opacity(isEnabled ? (configuration.isPressed ? 0.82 : 1) : 0.45)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .contentShape(Rectangle())
     }

@@ -106,6 +106,7 @@ struct DayStepper: View {
 /// duplicating and deleting (with undo) of entries.
 struct DiaryDayView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var entries: [FoodLogEntry]
     @Query(sort: \DailyNutritionGoal.effectiveFrom, order: .reverse) private var goals: [DailyNutritionGoal]
     private let day: Date
@@ -191,7 +192,7 @@ struct DiaryDayView: View {
                 }
                 .padding(.horizontal, Spacing.m)
                 .padding(.bottom, Spacing.s)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .id(backup.id)
             }
         }

@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phases 1–5 of 7 (foundation, nutrition, workouts, progress, widgets and Live Activities).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: Phases 1–6 of 7 (foundation, nutrition, workouts, progress, widgets and Live Activities, settings and data tools).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ Form keeps its database in the App Group container, and after every save it writ
 
 There are two test suites.
 
-**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation, widget snapshot file round trip, stale-day and new-week resets, progress analytics (weekly and monthly counts with empty periods, weekly streaks, per-week averages, daily nutrition averages that skip unlogged days and missing values, chart selection).
+**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation, CSV escaping and number/date formatting, reminder scheduling, widget snapshot file round trip, stale-day and new-week resets, progress analytics (weekly and monthly counts with empty periods, weekly streaks, per-week averages, daily nutrition averages that skip unlogged days and missing values, chart selection).
 
 ```sh
 cd Packages/FormCore
@@ -48,7 +48,7 @@ swift test
 
 This also runs on Linux with a Swift 5.9+ toolchain. In Xcode you can open `Packages/FormCore/Package.swift` and press **⌘U**.
 
-**FormTests** (hosted in the app, uses SwiftData): widget snapshots built from the store (empty store, today's diary, goal and weight, active workout and weekly counts), Live Activity state through pause and rest, the start-workout deep link and the spoken nutrition summary; active-workout restoration from a fresh context, rest timer start and pause, pause-excluded duration, volume and set counts, PR baselines and strict improvement, previous-session pre-fill, routine starts, reordering, skipping, discarding, history edits recalculating records; diary logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
+**FormTests** (hosted in the app, uses SwiftData): JSON and CSV export, delete-all-data; widget snapshots built from the store (empty store, today's diary, goal and weight, active workout and weekly counts), Live Activity state through pause and rest, the start-workout deep link and the spoken nutrition summary; active-workout restoration from a fresh context, rest timer start and pause, pause-excluded duration, volume and set counts, PR baselines and strict improvement, previous-session pre-fill, routine starts, reordering, skipping, discarding, history edits recalculating records; diary logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
 
 In Xcode: choose the **Form** scheme and press **⌘U**. From the command line:
 
@@ -56,6 +56,8 @@ In Xcode: choose the **Form** scheme and press **⌘U**. From the command line:
 xcodebuild test -project Form.xcodeproj -scheme Form \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
+
+The scheme runs both the unit tests and the UI tests. Add `-only-testing:FormTests` to skip the slower UI tests.
 
 ## Project structure
 
@@ -183,11 +185,19 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - New deep link `form://start-workout`.
 - Not included: buttons that change data from inside a widget or the Live Activity (for example "Skip rest"). Those would need the extension to write to the database, which Form avoids for now.
 
+### Phase 6: done
+
+- **Export** (Settings › Export data): *JSON*, one complete, versioned file with every record, including each diary entry's saved nutrition values; or *CSV*, five spreadsheet files (workout sets, food diary, foods, body measurements, nutrition targets). Values you never entered are `null` in JSON and blank in CSV, never 0. Numbers use a dot decimal separator, and times are ISO 8601. Text that a spreadsheet could run as a formula is neutralised. Files go to the share sheet, so you choose where they're saved.
+- **Delete all data** (Settings): a warning, then you must type DELETE. It removes every workout, routine, custom exercise, food, diary entry, saved meal, target and measurement, resets preferences, ends any Live Activity, cancels notifications, refreshes widgets and re-seeds the starter catalogue, like a fresh install. If anything fails, nothing is deleted.
+- **Daily logging reminder** (Settings › Reminders): optional and off by default. It asks for notification permission when turned on and fires at your chosen time, only on days with an empty diary. Today's reminder is cancelled as soon as you log something. Reminders are scheduled a week ahead on the device.
+- **Accessibility:** Reduce Motion is respected by the undo banner and button press effect, in addition to the existing progress rings and rest timer. Every icon-only button has a spoken label (checked across the app), and charts have VoiceOver summaries or Audio Graphs.
+- **UI tests** (`FormUITests`, run against an in-memory store): every tab opens, log body weight from Today, start and discard an empty workout, and Settings shows the data controls.
+- **Tests:** JSON export completeness and nulls, CSV blanks and quoting, export files, delete-all resetting to a fresh install (FormTests); CSV escaping, number and date formatting, reminder scheduling (FormCore).
+
 ### Not yet implemented
 
 | Phase | Remaining work |
 |---|---|
-| 6 | Optional reminders, JSON/CSV export, delete-all-data flow, further accessibility and error-handling passes, UI tests |
 | 7 | Visual polish, performance, device testing, release documentation |
 
 ## Verification and limitations
@@ -199,4 +209,4 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 
 ## Privacy
 
-Form makes no network requests, has no account, analytics or advertising, and stores everything in a local SwiftData database on the device (CloudKit sync is explicitly disabled). Targets are user-chosen settings, not medical advice.
+Form makes no network requests, has no account, analytics or advertising, and stores everything in a local SwiftData database on the device (CloudKit sync is explicitly disabled). You can export everything as JSON or CSV, or delete everything, from Settings. Targets are user-chosen settings, not medical advice.
