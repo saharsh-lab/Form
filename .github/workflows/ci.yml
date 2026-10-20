@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formcore:
+    name: FormCore tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+      - name: swift test
+        run: swift test --package-path Packages/FormCore
+
+  app:
+    name: Build and test the app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          phones = [d for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          print(phones[-1]["udid"])')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project Form.xcodeproj -scheme Form \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO | tee build.log | grep -E "error:|warning: .*(Sendable|actor)|BUILD" || true
+          grep -q "BUILD SUCCEEDED\|TEST BUILD SUCCEEDED" build.log
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project Form.xcodeproj -scheme Form \
+            -destination "id=${{ steps.sim.outputs.udid }}" -only-testing:FormTests \
+            CODE_SIGNING_ALLOWED=NO | tail -60
+      - name: UI tests
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project Form.xcodeproj -scheme Form \
+            -destination "id=${{ steps.sim.outputs.udid }}" -only-testing:FormUITests \
+            CODE_SIGNING_ALLOWED=NO | tail -60
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
