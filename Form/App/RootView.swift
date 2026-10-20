@@ -68,5 +68,8 @@ struct RootTabView: View {
             .tabItem { Label("Progress", systemImage: "chart.xyaxis.line") }
             .tag(AppTab.progress)
         }
+        .fullScreenCover(isPresented: $navigation.isActiveWorkoutPresented) {
+            ActiveWorkoutContainer()
+        }
     }
 }

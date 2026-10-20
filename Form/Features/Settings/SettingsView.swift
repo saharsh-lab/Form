@@ -26,6 +26,28 @@ struct SettingsView: View {
 private struct SettingsForm: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var preferences: UserPreferences
+    @State private var notificationsDenied = false
+
+    /// Turning alerts on asks for notification permission first; denial leaves the toggle off.
+    private var restAlertsBinding: Binding<Bool> {
+        Binding(
+            get: { preferences.restTimerNotificationsEnabled },
+            set: { enabled in
+                guard enabled else {
+                    preferences.restTimerNotificationsEnabled = false
+                    NotificationScheduler.cancelRestTimerAlert()
+                    persist()
+                    return
+                }
+                Task {
+                    let granted = await NotificationScheduler.requestAuthorization()
+                    preferences.restTimerNotificationsEnabled = granted
+                    notificationsDenied = !granted
+                    persist()
+                }
+            }
+        )
+    }
 
     var body: some View {
         List {
@@ -68,10 +90,15 @@ private struct SettingsForm: View {
                     LabeledContent("Default rest", value: DurationText.clock(TimeInterval(preferences.defaultRestSeconds)))
                 }
                 .accessibilityValue(DurationText.summary(TimeInterval(preferences.defaultRestSeconds)))
+                Toggle("Rest timer alerts", isOn: restAlertsBinding)
             } header: {
                 Text("Workouts")
             } footer: {
-                Text("Used for the rest timer after completing a set. Individual routine exercises can override it.")
+                if notificationsDenied {
+                    Text("Notifications are turned off for Form in the Settings app, so rest alerts can't be shown.")
+                } else {
+                    Text("The rest timer starts when you complete a set. With alerts on, a local notification tells you when rest is over while Form is in the background.")
+                }
             }
 
             Section {

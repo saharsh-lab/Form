@@ -2,31 +2,47 @@ import SwiftUI
 import SwiftData
 import FormCore
 
-/// Train tab root: routines and the exercise library.
-///
-/// Phase 1 scope: browse routines and the catalogue. Starting and logging
-/// workouts, and editing routines, arrive in Phase 3.
+/// Train tab root: resume or start a workout, manage routines, open the
+/// exercise library and workout history.
 struct TrainView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AppRouter.self) private var router
     @Query(sort: \WorkoutRoutine.sortIndex) private var routines: [WorkoutRoutine]
-    @Query private var exercises: [Exercise]
+    @Query(filter: #Predicate<WorkoutSession> { $0.statusRaw == "active" }, sort: \WorkoutSession.startedAt, order: .reverse)
+    private var activeSessions: [WorkoutSession]
+    @Query(filter: #Predicate<WorkoutSession> { $0.statusRaw == "completed" })
+    private var completedSessions: [WorkoutSession]
+
+    @State private var errorMessage: String?
+    @State private var pendingDeletion: WorkoutRoutine?
+    @State private var newRoutine: WorkoutRoutine?
+    @State private var isStarting = false
+
+    private var workoutRepository: WorkoutRepository { WorkoutRepository(context: modelContext) }
+    private var routineRepository: RoutineRepository { RoutineRepository(context: modelContext) }
 
     var body: some View {
         List {
             Section {
-                NavigationLink {
-                    ExerciseLibraryView()
-                } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Exercise library")
-                                .foregroundStyle(Color.formTextPrimary)
-                            Text("\(exercises.filter { !$0.isArchived }.count) exercises")
-                                .formCaption()
-                        }
-                    } icon: {
-                        Image(systemName: "books.vertical")
-                            .foregroundStyle(Color.formAccent)
+                if let active = activeSessions.first {
+                    ActiveWorkoutBanner(session: active) { router.isActiveWorkoutPresented = true }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } else {
+                    Button {
+                        start { try workoutRepository.startEmptyWorkout() }
+                    } label: {
+                        Label("Start empty workout", systemImage: "plus")
                     }
+                    .buttonStyle(FormPrimaryButtonStyle())
+                    .disabled(isStarting)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
+            } footer: {
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(Color.formDestructive)
                 }
             }
 
@@ -34,7 +50,8 @@ struct TrainView: View {
                 if routines.isEmpty {
                     EmptyStateView(symbol: "list.bullet.rectangle",
                                    title: "No routines yet",
-                                   message: "Routines are reusable workout plans. Creating your own arrives with workout logging.")
+                                   message: "Routines are reusable workout plans with target sets and reps.",
+                                   actionTitle: "Create routine", action: createRoutine)
                         .listRowBackground(Color.clear)
                 } else {
                     ForEach(routines) { routine in
@@ -43,16 +60,150 @@ struct TrainView: View {
                         } label: {
                             RoutineRow(routine: routine)
                         }
+                        .contextMenu {
+                            Button { start { try workoutRepository.startWorkout(from: routine) } } label: {
+                                Label("Start workout", systemImage: "play.fill")
+                            }
+                            .disabled(!activeSessions.isEmpty)
+                            Button { perform { try routineRepository.duplicate(routine, sortIndex: routines.count) } } label: {
+                                Label("Duplicate", systemImage: "plus.square.on.square")
+                            }
+                            Button(role: .destructive) { pendingDeletion = routine } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions {
+                            Button(role: .destructive) { pendingDeletion = routine } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button { perform { try routineRepository.duplicate(routine, sortIndex: routines.count) } } label: {
+                                Label("Duplicate", systemImage: "plus.square.on.square")
+                            }
+                            .tint(Color.formFat)
+                        }
+                    }
+                    .onMove { source, destination in
+                        perform { try routineRepository.moveRoutines(routines, from: source, to: destination) }
                     }
                 }
             } header: {
-                Text("Routines")
+                HStack {
+                    Text("Routines")
+                    Spacer()
+                    Button(action: createRoutine) {
+                        Image(systemName: "plus")
+                            .frame(minWidth: Metrics.minimumTouchTarget, minHeight: 32)
+                    }
+                    .accessibilityLabel("New routine")
+                }
+            }
+
+            Section {
+                NavigationLink {
+                    WorkoutHistoryView()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("History").foregroundStyle(Color.formTextPrimary)
+                            Text("\(completedSessions.count) completed \(completedSessions.count == 1 ? "workout" : "workouts")")
+                                .formCaption()
+                        }
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath").foregroundStyle(Color.formAccent)
+                    }
+                }
+                NavigationLink {
+                    ExerciseLibraryView()
+                } label: {
+                    Label("Exercise library", systemImage: "books.vertical")
+                }
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .formPageBackground()
         .navigationTitle("Train")
+        .toolbar {
+            if !routines.isEmpty { EditButton() }
+        }
+        .navigationDestination(item: $newRoutine) { routine in
+            RoutineEditorView(routine: routine)
+        }
+        .confirmationDialog("Delete this routine?",
+                            isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
+                            titleVisibility: .visible,
+                            presenting: pendingDeletion) { routine in
+            Button("Delete \(routine.name)", role: .destructive) {
+                perform { try routineRepository.delete(routine) }
+            }
+        } message: { _ in
+            Text("Workouts you've already logged from it stay in your history.")
+        }
+    }
+
+    private func createRoutine() {
+        perform {
+            newRoutine = try routineRepository.create(named: "New routine", sortIndex: routines.count)
+        }
+    }
+
+    private func start(_ action: () throws -> WorkoutSession) {
+        guard !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+        perform {
+            _ = try action()
+            router.isActiveWorkoutPresented = true
+        }
+    }
+
+    private func perform(_ action: () throws -> Void) {
+        do {
+            try action()
+            errorMessage = nil
+        } catch {
+            modelContext.rollback()
+            errorMessage = error.localizedDescription
+            HapticsManager.shared.error()
+        }
+    }
+}
+
+/// Shown at the top of Train while a workout is in progress.
+struct ActiveWorkoutBanner: View {
+    let session: WorkoutSession
+    let resume: () -> Void
+
+    var body: some View {
+        Button(action: resume) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: Spacing.s) {
+                    Image(systemName: session.clock.isPaused ? "pause.circle.fill" : "record.circle")
+                        .font(.title2)
+                        .foregroundStyle(Color.formOnAccent)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(session.clock.isPaused ? "Workout paused" : "Workout in progress")
+                            .font(.footnote)
+                            .foregroundStyle(Color.formOnAccent.opacity(0.85))
+                        Text(session.name)
+                            .font(.headline)
+                            .foregroundStyle(Color.formOnAccent)
+                    }
+                    Spacer()
+                    Text(DurationText.clock(session.clock.elapsed(at: context.date)))
+                        .formNumeric(.title3)
+                        .foregroundStyle(Color.formOnAccent)
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Color.formOnAccent)
+                        .accessibilityHidden(true)
+                }
+                .padding(Spacing.m)
+                .background(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(Color.formAccent))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Resume \(session.name)")
     }
 }
 
@@ -79,7 +230,11 @@ private struct RoutineRow: View {
 }
 
 struct RoutineDetailView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AppRouter.self) private var router
+    @Query(filter: #Predicate<WorkoutSession> { $0.statusRaw == "active" }) private var activeSessions: [WorkoutSession]
     let routine: WorkoutRoutine
+    @State private var errorMessage: String?
 
     var body: some View {
         List {
@@ -91,6 +246,10 @@ struct RoutineDetailView: View {
                 }
             }
             Section("Exercises") {
+                if routine.exercises.isEmpty {
+                    Text("No exercises yet. Use Edit to add some.")
+                        .foregroundStyle(Color.formTextSecondary)
+                }
                 ForEach(routine.orderedExercises) { entry in
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -110,18 +269,43 @@ struct RoutineDetailView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            Section {
-                InlineNotice(symbol: "hammer", text: "Starting this routine and logging sets arrive in the next build (Phase 3).")
+            if let errorMessage {
+                Section { Text(errorMessage).foregroundStyle(Color.formDestructive) }
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .formPageBackground()
         .navigationTitle(routine.name)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink("Edit") { RoutineEditorView(routine: routine) }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: Spacing.xxs) {
+                Button(activeSessions.isEmpty ? "Start workout" : "Workout already in progress", action: start)
+                    .buttonStyle(FormPrimaryButtonStyle())
+                    .disabled(!activeSessions.isEmpty || routine.exercises.isEmpty)
+            }
+            .padding(.horizontal, Spacing.m)
+            .padding(.vertical, Spacing.xs)
+            .background(Color.formBackground.opacity(0.96))
+        }
+    }
+
+    private func start() {
+        do {
+            try WorkoutRepository(context: modelContext).startWorkout(from: routine)
+            router.isActiveWorkoutPresented = true
+        } catch {
+            errorMessage = error.localizedDescription
+            HapticsManager.shared.error()
+        }
     }
 
     private func targetText(_ entry: RoutineExercise) -> String {
-        if let reps = entry.repTargetText {
+        if let reps = entry.repTargetText, entry.exercise?.trackingType != .duration, entry.exercise?.trackingType != .distanceAndDuration {
             return "\(entry.targetSets) × \(reps)"
         }
         return "\(entry.targetSets) sets"

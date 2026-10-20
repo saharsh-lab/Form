@@ -8,6 +8,7 @@ struct ExerciseLibraryView: View {
     @State private var searchText = ""
     @State private var muscleFilter: MuscleGroup?
     @State private var equipmentFilter: Equipment?
+    @State private var creating = false
 
     private var filtered: [Exercise] {
         ExerciseFilter.apply(exercises.filter { !$0.isArchived },
@@ -34,7 +35,11 @@ struct ExerciseLibraryView: View {
                     .listRowBackground(Color.clear)
                 } else {
                     ForEach(filtered) { exercise in
-                        ExerciseRow(exercise: exercise)
+                        NavigationLink {
+                            ExerciseEditorView(exercise: exercise)
+                        } label: {
+                            ExerciseRow(exercise: exercise)
+                        }
                     }
                 }
             } footer: {
@@ -49,6 +54,25 @@ struct ExerciseLibraryView: View {
         .navigationTitle("Exercises")
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search exercises")
         .autocorrectionDisabled()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    creating = true
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(minWidth: Metrics.minimumTouchTarget, minHeight: Metrics.minimumTouchTarget)
+                }
+                .accessibilityLabel("New exercise")
+            }
+        }
+        .sheet(isPresented: $creating) {
+            NavigationStack {
+                ExerciseEditorView(exercise: nil, prefillName: searchText.trimmingCharacters(in: .whitespaces))
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { creating = false } }
+                    }
+            }
+        }
     }
 
     private var hasFilters: Bool {

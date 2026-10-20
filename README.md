@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phases 1–2 of 7 (foundation, foods and diary).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: Phases 1–3 of 7 (foundation, nutrition, workouts).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ swift test
 
 This also runs on Linux with a Swift 5.9+ toolchain. In Xcode you can open `Packages/FormCore/Package.swift` and press **⌘U**.
 
-**FormTests** (hosted in the app, uses SwiftData): logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
+**FormTests** (hosted in the app, uses SwiftData): active-workout restoration from a fresh context, rest timer start and pause, pause-excluded duration, volume and set counts, PR baselines and strict improvement, previous-session pre-fill, routine starts, reordering, skipping, discarding, history edits recalculating records; diary logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
 
 In Xcode: choose the **Form** scheme and press **⌘U**. From the command line:
 
@@ -144,11 +144,22 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - Daily totals update as soon as a save succeeds; missing calorie values are flagged in the totals.
 - Double-tap protection on every save button; success haptics only after a successful save.
 
+### Phase 3: done
+
+- **Workouts:** start an empty workout or start from a routine (planned sets pre-filled from your last session of each exercise, never invented). Only one workout can be active.
+- **Logging:** each exercise shows numbered working sets, W warm-up and D drop sets, the previous session's values, and fields for weight × reps, reps, seconds, or distance and seconds depending on the exercise. Weights are entered in kg or lb and stored in kg. Tap the circle to complete a set (light haptic). Add, retype or delete sets; add, reorder, skip or remove exercises.
+- **Saved as you go:** every change saves immediately. Closing the app or minimising the workout keeps it running, and it is restored from the database on the next launch (Train shows a "Workout in progress" banner; `form://workout` opens it).
+- **Pause / resume:** paused time is excluded from duration, and pausing also pauses the rest timer.
+- **Rest timer:** starts automatically when a set is completed, using the default rest from Settings. Start, pause, resume, skip, reset and ±15 s. It is date-based, so it stays accurate in the background. On completion in the foreground it gives a notification haptic and a VoiceOver announcement. Optional **Rest timer alerts** (Settings) schedule a local notification for the end time.
+- **Finish / discard:** both ask for confirmation. Finishing shows duration, sets, volume and any **personal records** (success haptic, which is reserved for genuine records and saves).
+- **Routines:** create, rename, add notes, add/remove/reorder exercises, set target sets and rep ranges, duplicate, delete and reorder routines.
+- **Exercise library:** create custom exercises and edit any exercise. Exercises with history are archived rather than deleted, and their tracking type is locked so records stay comparable.
+- **History:** completed workouts grouped by month. Open one to rename it, correct weights, reps and completion, add exercises or sets, or delete it; records recalculate from what remains.
+
 ### Not yet implemented
 
 | Phase | Remaining work |
 |---|---|
-| 3 | Start, pause, resume, finish and discard workouts; set logging with previous-session values; warm-up, drop and extra sets; skipping exercises; rest timer UI with notifications; routine and exercise editing; PR detection on save; reviewing and editing past sessions |
 | 4 | Swift Charts: workout counts, exercise history, volume, personal records, body weight and measurements, average calories and protein, consistency; date ranges and point selection |
 | 5 | WidgetKit extension (small, medium, large, Lock Screen), App Intents, Live Activities for the active workout and rest timer |
 | 6 | Optional reminders, JSON/CSV export, delete-all-data flow, further accessibility and error-handling passes, UI tests |

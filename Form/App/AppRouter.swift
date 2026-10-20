@@ -24,6 +24,8 @@ final class AppRouter {
     var nutritionPath = NavigationPath()
     var progressPath = NavigationPath()
     var presentedSheet: AppSheet?
+    /// Shows the in-progress workout full screen. Closing it keeps the workout running.
+    var isActiveWorkoutPresented = false
 
     /// Selecting the current tab again pops it to its root, matching system apps.
     func select(_ tab: AppTab) {
@@ -42,7 +44,7 @@ final class AppRouter {
         }
     }
 
-    /// Handles URLs such as `form://nutrition` or `form://log-weight`.
+    /// Handles URLs such as `form://nutrition`, `form://workout` or `form://log-weight`.
     /// Returns false for URLs Form does not understand.
     @discardableResult
     func handle(url: URL) -> Bool {
@@ -52,6 +54,9 @@ final class AppRouter {
         case "train": selectedTab = .train
         case "nutrition": selectedTab = .nutrition
         case "progress": selectedTab = .progress
+        case "workout":
+            selectedTab = .train
+            isActiveWorkoutPresented = true
         case "log-weight":
             selectedTab = .today
             presentedSheet = .logBodyWeight
