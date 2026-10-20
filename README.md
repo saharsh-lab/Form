@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phase 1 of 7 (foundation).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: Phases 1–2 of 7 (foundation, foods and diary).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -38,7 +38,7 @@ Form stores its database in the App Group container so the widget extension (Pha
 
 There are two test suites.
 
-**FormCore** (pure Swift, no UIKit or SwiftData): unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation.
+**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation.
 
 ```sh
 cd Packages/FormCore
@@ -47,7 +47,7 @@ swift test
 
 This also runs on Linux with a Swift 5.9+ toolchain. In Xcode you can open `Packages/FormCore/Package.swift` and press **⌘U**.
 
-**FormTests** (hosted in the app, uses SwiftData): historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
+**FormTests** (hosted in the app, uses SwiftData): logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
 
 In Xcode: choose the **Form** scheme and press **⌘U**. From the command line:
 
@@ -70,6 +70,7 @@ Form/
 │   │   ├── Workout.swift        Set kinds, tracking types, volume, PR detection
 │   │   ├── Timers.swift         Date-based RestTimer and WorkoutClock
 │   │   ├── Validation.swift     Locale-aware number parsing, name and date rules
+│   │   ├── TextSearch.swift     Case/diacritic-insensitive ranked search
 │   │   └── DurationFormatting.swift
 │   └── Tests/FormCoreTests/
 ├── Form/                        The iOS app target (module name FormApp)
@@ -86,10 +87,10 @@ Form/
 
 ### Architecture
 
-- **MVVM, feature-oriented.** Each feature folder owns its views. Phase 1 screens are thin enough to read straight from SwiftData with `@Query`; view models are introduced where a screen gains real state (the active workout and food editor in Phases 2–3).
+- **MVVM, feature-oriented.** Each feature folder owns its views. Simple screens read straight from SwiftData with `@Query`; screens with real editing state get an `@Observable` view model (`FoodEditorModel`, and the active workout in Phase 3).
 - **Calculations live in FormCore**, never in views. Views call `NutritionScaler`, `TargetProgress`, `WorkoutCalculator`, `PersonalRecordCalculator`, `RestTimer` and `InputValidator`.
 - **Canonical units in storage.** Weight in kilograms, lengths in centimetres, distance in metres. The weight and length unit preferences only change display and entry.
-- **No repository layer yet.** SwiftData's `ModelContext` is already the persistence abstraction; a repository will be added only where it removes duplication (for example the active-workout service).
+- **Repositories only where they help.** `NutritionRepository` groups multi-model operations (logging with snapshots, saved meals, delete with undo) and always saves before returning, so success feedback follows a real save. Simple edits use `ModelContext` directly.
 
 ### Data model
 
@@ -133,11 +134,20 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - `HapticsManager` with set-completed, selection, save-success, personal-record, timer, error and milestone feedback, gated by the haptics setting. Success feedback fires only after a save succeeds.
 - Error handling for an unreadable store (no automatic deletion), validation messages on every numeric field, save-failure rollback.
 
+### Phase 2: done
+
+- **Foods:** create, edit, duplicate, favourite and delete in a Foods library (Nutrition › Foods). Values are entered per serving, per 100 g or per 100 ml with a clear serving size; empty values are saved as "not specified". Deleting a food keeps diary entries and saved meals intact.
+- **Search:** case- and diacritic-insensitive partial matching of every word ("greek yog" finds "Yoghurt, Greek style"), ranked exact › prefix › word prefix › contains. An **Add "…" as a new food** row is always at the top.
+- **Logging:** each meal has an Add food button that opens a picker with saved meals, favourites, recent foods and all foods. Choose a quantity in any compatible unit (servings, g, kg, oz, lb, ml, l, fl oz, cup, tbsp, tsp, pieces) with a live nutrition preview; invalid or incompatible quantities can't be saved.
+- **Diary:** tap an entry to edit quantity, unit or meal (scaled from its stored snapshot); swipe to duplicate or delete; long-press to move to another meal. Deletes show an Undo banner for 5 seconds.
+- **Saved meals:** save any meal's foods from its header menu, log them later as separate editable entries, and rename, trim or delete saved meals. If a food is later deleted, the saved meal uses the values stored with it.
+- Daily totals update as soon as a save succeeds; missing calorie values are flagged in the totals.
+- Double-tap protection on every save button; success haptics only after a successful save.
+
 ### Not yet implemented
 
 | Phase | Remaining work |
 |---|---|
-| 2 | Create, edit, duplicate, favourite and delete foods; food search; logging, editing, moving, duplicating and deleting diary entries; recent foods, favourites and saved meals |
 | 3 | Start, pause, resume, finish and discard workouts; set logging with previous-session values; warm-up, drop and extra sets; skipping exercises; rest timer UI with notifications; routine and exercise editing; PR detection on save; reviewing and editing past sessions |
 | 4 | Swift Charts: workout counts, exercise history, volume, personal records, body weight and measurements, average calories and protein, consistency; date ranges and point selection |
 | 5 | WidgetKit extension (small, medium, large, Lock Screen), App Intents, Live Activities for the active workout and rest timer |
@@ -146,7 +156,7 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 
 ## Verification and limitations
 
-- **This build has not yet been compiled.** It was written in a Linux environment with no Xcode and no Swift toolchain, so neither the app nor the tests have been built or run. Every Swift file was checked with a Swift syntax parser (tree-sitter-swift) and parses cleanly, but type errors can only be caught by Xcode. If the first build reports errors, they should be small; please share the messages so they can be fixed before Phase 2 builds on top.
+- **This code has not yet been compiled.** It was written in a Linux environment with no Xcode and no Swift toolchain, so neither the app nor the tests have been built or run. Every Swift file was checked with a Swift syntax parser (tree-sitter-swift) and parses cleanly, but type errors can only be caught by Xcode. If a build reports errors, please share the messages so they can be fixed before later phases build on top.
 - Not yet tested on simulators or devices, in either theme, or at large Dynamic Type sizes.
 - The app icon is a simple placeholder.
 - HealthKit is intentionally out of scope for the MVP.

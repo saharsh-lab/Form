@@ -4,8 +4,7 @@ import FormCore
 
 /// Nutrition tab root: a food diary for one day with daily totals.
 ///
-/// Phase 1 scope: the diary reads persisted entries, totals and goals.
-/// Creating foods and logging entries arrive in Phase 2.
+/// Every value is entered by the user; Form never estimates nutrition.
 struct NutritionView: View {
     @State private var day = Calendar.current.startOfDay(for: .now)
 
@@ -21,6 +20,14 @@ struct NutritionView: View {
                     .background(Color.formBackground)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        FoodLibraryView()
+                    } label: {
+                        Text("Foods")
+                            .frame(minHeight: Metrics.minimumTouchTarget)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         NutritionGoalsView()
@@ -95,11 +102,20 @@ struct DayStepper: View {
     }
 }
 
-/// Totals and meal sections for one day.
+/// Totals and meal sections for one day, with logging, editing, moving,
+/// duplicating and deleting (with undo) of entries.
 struct DiaryDayView: View {
+    @Environment(\.modelContext) private var modelContext
     @Query private var entries: [FoodLogEntry]
     @Query(sort: \DailyNutritionGoal.effectiveFrom, order: .reverse) private var goals: [DailyNutritionGoal]
     private let day: Date
+
+    @State private var addingTo: MealType?
+    @State private var editing: FoodLogEntry?
+    @State private var undoBackup: DeletedLogEntry?
+    @State private var savingMealFrom: MealType?
+    @State private var newMealName = ""
+    @State private var errorMessage: String?
 
     init(day: Date) {
         self.day = day
@@ -115,6 +131,8 @@ struct DiaryDayView: View {
         GoalResolver.goal(on: day, from: goals.map(\.snapshot))?.targets
     }
 
+    private var repository: NutritionRepository { NutritionRepository(context: modelContext) }
+
     var body: some View {
         let totals = NutritionTotals(entries.map(\.nutrition))
         List {
@@ -125,33 +143,166 @@ struct DiaryDayView: View {
                     if targets == nil {
                         InlineNotice(symbol: "target", text: "No daily targets set. Use the target button to add your own.")
                     }
+                    if totals.missingCount(for: .calories) > 0 {
+                        InlineNotice(symbol: "exclamationmark.triangle",
+                                     text: "\(totals.missingCount(for: .calories)) \(totals.missingCount(for: .calories) == 1 ? "entry has" : "entries have") no calorie value, so the total may be low.",
+                                     tint: .formWarning)
+                    }
                 }
                 .padding(.vertical, Spacing.xs)
+            } footer: {
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(Color.formDestructive)
+                }
             }
 
             ForEach(MealType.allCases) { meal in
                 let mealEntries = entries.filter { $0.meal == meal }
                 Section {
-                    if mealEntries.isEmpty {
-                        Text("Nothing logged")
-                            .font(.subheadline)
-                            .foregroundStyle(Color.formTextSecondary)
-                    } else {
-                        ForEach(mealEntries) { entry in
-                            FoodLogRow(entry: entry)
-                        }
+                    ForEach(mealEntries) { entry in
+                        entryRow(entry)
                     }
+                    Button {
+                        addingTo = meal
+                    } label: {
+                        Label("Add food", systemImage: "plus")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .accessibilityLabel("Add food to \(meal.displayName)")
                 } header: {
-                    MealHeader(meal: meal, totals: NutritionTotals(mealEntries.map(\.nutrition)), isEmpty: mealEntries.isEmpty)
+                    MealHeader(meal: meal,
+                               totals: NutritionTotals(mealEntries.map(\.nutrition)),
+                               isEmpty: mealEntries.isEmpty) {
+                        newMealName = "\(meal.displayName) \(day.formatted(.dateTime.day().month(.abbreviated)))"
+                        savingMealFrom = meal
+                    }
                 }
-            }
-
-            Section {
-                InlineNotice(symbol: "hammer", text: "Adding foods and logging meals arrive in the next build (Phase 2). Form never estimates nutrition: you enter every value yourself.")
             }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+        .overlay(alignment: .bottom) {
+            if let backup = undoBackup {
+                UndoToast(message: "Deleted \(backup.foodName)") {
+                    restore(backup)
+                } onExpire: {
+                    if undoBackup?.id == backup.id { undoBackup = nil }
+                }
+                .padding(.horizontal, Spacing.m)
+                .padding(.bottom, Spacing.s)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .id(backup.id)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: undoBackup?.id)
+        .sheet(item: $addingTo) { meal in
+            FoodPickerSheet(meal: meal, day: day)
+        }
+        .sheet(item: $editing) { entry in
+            NavigationStack {
+                LogFoodView(mode: .edit(entry), meal: entry.meal) { editing = nil }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { editing = nil }
+                        }
+                    }
+            }
+        }
+        .alert("Save as meal",
+               isPresented: Binding(get: { savingMealFrom != nil }, set: { if !$0 { savingMealFrom = nil } })) {
+            TextField("Name", text: $newMealName)
+            Button("Save") { saveMeal() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves this meal's foods and quantities so you can log them together later.")
+        }
+    }
+
+    @ViewBuilder
+    private func entryRow(_ entry: FoodLogEntry) -> some View {
+        Button {
+            editing = entry
+        } label: {
+            FoodLogRow(entry: entry)
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                delete(entry)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                duplicate(entry)
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+            .tint(Color.formAccent)
+        }
+        .contextMenu {
+            Button { editing = entry } label: { Label("Edit", systemImage: "pencil") }
+            Button { duplicate(entry) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+            Menu {
+                ForEach(MealType.allCases.filter { $0 != entry.meal }) { meal in
+                    Button(meal.displayName) { move(entry, to: meal) }
+                }
+            } label: {
+                Label("Move to", systemImage: "arrow.right.square")
+            }
+            Button(role: .destructive) { delete(entry) } label: { Label("Delete", systemImage: "trash") }
+        }
+        .accessibilityHint("Opens the entry for editing")
+    }
+
+    private func perform(_ action: () throws -> Void) {
+        do {
+            try action()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            HapticsManager.shared.error()
+        }
+    }
+
+    private func delete(_ entry: FoodLogEntry) {
+        perform { undoBackup = try repository.delete(entry) }
+    }
+
+    private func restore(_ backup: DeletedLogEntry) {
+        perform {
+            try repository.restore(backup)
+            undoBackup = nil
+        }
+    }
+
+    private func duplicate(_ entry: FoodLogEntry) {
+        perform {
+            try repository.duplicate(entry)
+            HapticsManager.shared.saveSucceeded()
+        }
+    }
+
+    private func move(_ entry: FoodLogEntry, to meal: MealType) {
+        perform { try repository.move(entry, to: meal) }
+    }
+
+    private func saveMeal() {
+        guard let meal = savingMealFrom else { return }
+        let mealEntries = entries.filter { $0.meal == meal }
+        switch InputValidator.name(newMealName, maximumLength: 60) {
+        case .success(let name):
+            perform {
+                try repository.saveMeal(named: name, from: mealEntries)
+                HapticsManager.shared.saveSucceeded()
+            }
+        case .failure(let error):
+            errorMessage = "Meal not saved: \(error.localizedDescription)"
+            HapticsManager.shared.error()
+        }
+        savingMealFrom = nil
     }
 }
 
@@ -159,6 +310,7 @@ private struct MealHeader: View {
     let meal: MealType
     let totals: NutritionTotals
     let isEmpty: Bool
+    let saveAsMeal: () -> Void
 
     var body: some View {
         HStack {
@@ -167,6 +319,15 @@ private struct MealHeader: View {
             if !isEmpty {
                 Text("\(NumberText.amount(totals.calories)) kcal")
                     .monospacedDigit()
+                Menu {
+                    Button(action: saveAsMeal) {
+                        Label("Save as meal", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .frame(minWidth: Metrics.minimumTouchTarget, minHeight: 32)
+                }
+                .accessibilityLabel("\(meal.displayName) options")
             }
         }
     }

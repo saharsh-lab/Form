@@ -108,10 +108,12 @@ final class FoodLogEntry {
     var notes: String
     var food: Food?
 
-    /// Copies the food's current values as the entry's snapshot. Insert the
-    /// instance into a context before linking `food`.
+    /// Creates an entry from explicit snapshot values.
     init(id: UUID = UUID(),
-         food: Food,
+         foodName: String,
+         servingDescription: String,
+         serving: ServingDefinition,
+         nutrition: NutritionValues,
          day: Date,
          meal: MealType,
          quantity: Double,
@@ -124,16 +126,39 @@ final class FoodLogEntry {
         self.mealRaw = meal.rawValue
         self.quantity = quantity
         self.quantityUnitRaw = unit.rawValue
-        self.foodName = food.name
-        self.servingDescription = food.servingDescription
-        self.snapshotServingQuantity = food.servingQuantity
-        self.snapshotServingUnitRaw = food.servingUnitRaw
-        self.snapshotBasisRaw = food.basisRaw
-        self.snapshotCalories = food.calories
-        self.snapshotProtein = food.protein
-        self.snapshotCarbohydrates = food.carbohydrates
-        self.snapshotFat = food.fat
+        self.foodName = foodName
+        self.servingDescription = servingDescription
+        self.snapshotServingQuantity = serving.servingQuantity
+        self.snapshotServingUnitRaw = serving.servingUnit.rawValue
+        self.snapshotBasisRaw = serving.basis.rawValue
+        self.snapshotCalories = nutrition.calories
+        self.snapshotProtein = nutrition.protein
+        self.snapshotCarbohydrates = nutrition.carbohydrates
+        self.snapshotFat = nutrition.fat
         self.notes = ""
+    }
+
+    /// Copies the food's current values as the entry's snapshot. Insert the
+    /// instance into a context before linking `food`.
+    convenience init(id: UUID = UUID(),
+                     food: Food,
+                     day: Date,
+                     meal: MealType,
+                     quantity: Double,
+                     unit: QuantityUnit,
+                     loggedAt: Date = .now,
+                     calendar: Calendar = .current) {
+        self.init(id: id,
+                  foodName: food.name,
+                  servingDescription: food.servingDescription,
+                  serving: food.serving,
+                  nutrition: food.nutrition,
+                  day: day,
+                  meal: meal,
+                  quantity: quantity,
+                  unit: unit,
+                  loggedAt: loggedAt,
+                  calendar: calendar)
     }
 
     var meal: MealType {
@@ -213,21 +238,69 @@ final class SavedMealItem {
     var meal: SavedMeal?
     var food: Food?
 
-    /// Insert the instance into a context before linking `meal` and `food`.
-    init(id: UUID = UUID(), food: Food, quantity: Double, unit: QuantityUnit, sortIndex: Int) {
+    /// Creates an item from explicit snapshot values. Insert the instance into
+    /// a context before linking `meal` and `food`.
+    init(id: UUID = UUID(),
+         foodName: String,
+         servingDescription: String,
+         serving: ServingDefinition,
+         nutrition: NutritionValues,
+         quantity: Double,
+         unit: QuantityUnit,
+         sortIndex: Int) {
         self.id = id
         self.sortIndex = sortIndex
         self.quantity = quantity
         self.quantityUnitRaw = unit.rawValue
-        self.foodName = food.name
-        self.servingDescription = food.servingDescription
-        self.snapshotServingQuantity = food.servingQuantity
-        self.snapshotServingUnitRaw = food.servingUnitRaw
-        self.snapshotBasisRaw = food.basisRaw
-        self.snapshotCalories = food.calories
-        self.snapshotProtein = food.protein
-        self.snapshotCarbohydrates = food.carbohydrates
-        self.snapshotFat = food.fat
+        self.foodName = foodName
+        self.servingDescription = servingDescription
+        self.snapshotServingQuantity = serving.servingQuantity
+        self.snapshotServingUnitRaw = serving.servingUnit.rawValue
+        self.snapshotBasisRaw = serving.basis.rawValue
+        self.snapshotCalories = nutrition.calories
+        self.snapshotProtein = nutrition.protein
+        self.snapshotCarbohydrates = nutrition.carbohydrates
+        self.snapshotFat = nutrition.fat
+    }
+
+    convenience init(food: Food, quantity: Double, unit: QuantityUnit, sortIndex: Int) {
+        self.init(foodName: food.name,
+                  servingDescription: food.servingDescription,
+                  serving: food.serving,
+                  nutrition: food.nutrition,
+                  quantity: quantity,
+                  unit: unit,
+                  sortIndex: sortIndex)
+    }
+
+    /// Copies a diary entry's quantity and snapshot.
+    convenience init(entry: FoodLogEntry, sortIndex: Int) {
+        self.init(foodName: entry.foodName,
+                  servingDescription: entry.servingDescription,
+                  serving: entry.snapshotServing,
+                  nutrition: entry.snapshotNutrition,
+                  quantity: entry.quantity,
+                  unit: entry.quantityUnit,
+                  sortIndex: sortIndex)
+    }
+
+    var snapshotServing: ServingDefinition {
+        ServingDefinition(basis: ServingBasis(rawValue: snapshotBasisRaw) ?? .perServing,
+                          servingQuantity: snapshotServingQuantity,
+                          servingUnit: QuantityUnit(rawValue: snapshotServingUnitRaw) ?? .gram)
+    }
+
+    var snapshotNutrition: NutritionValues {
+        NutritionValues(calories: snapshotCalories, protein: snapshotProtein, carbohydrates: snapshotCarbohydrates, fat: snapshotFat)
+    }
+
+    /// Serving and values used when logging: the food's current ones if it still exists, else the snapshot.
+    var currentServing: ServingDefinition { food?.serving ?? snapshotServing }
+    var currentNutrition: NutritionValues { food?.nutrition ?? snapshotNutrition }
+
+    /// Nutrition for this item's quantity, or unspecified values if it can't be scaled.
+    var nutrition: NutritionValues {
+        (try? NutritionScaler.values(base: currentNutrition, serving: currentServing, quantity: quantity, unit: quantityUnit).get()) ?? .unspecified
     }
 
     var quantityUnit: QuantityUnit {
