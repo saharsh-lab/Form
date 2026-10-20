@@ -240,6 +240,7 @@ struct WeightStatTile: View {
 
 /// Workouts this week and over the last four weeks, from completed sessions.
 private struct TodayConsistencyCard: View {
+    @Environment(AppRouter.self) private var router
     @Query private var recentSessions: [WorkoutSession]
     private let now: Date
 
@@ -259,22 +260,33 @@ private struct TodayConsistencyCard: View {
 
     private var lastFourWeeksAverage: Double {
         let start = Calendar.current.date(byAdding: .day, value: -28, to: now) ?? now
-        let count = recentSessions.filter { $0.startedAt >= start && $0.startedAt <= now }.count
-        return Double(count) / 4
+        return ProgressAnalytics.averagePerWeek(of: recentSessions.map(\.startedAt), from: start, now: now)
+    }
+
+    /// Weeks in a row with a workout. Only the last five weeks are queried here,
+    /// so longer streaks show as "5+"; the Progress tab has the full figure.
+    private var streakText: String {
+        let streak = ProgressAnalytics.weeklyStreak(of: recentSessions.map(\.startedAt), now: now)
+        return streak >= 5 ? "5+" : "\(streak)"
     }
 
     var body: some View {
         FormCard {
-            SectionHeader("Consistency")
+            SectionHeader(title: "Consistency") {
+                Button("Progress") { router.select(.progress) }
+                    .font(.subheadline.weight(.medium))
+            }
             if recentSessions.isEmpty {
                 InlineNotice(symbol: "calendar", text: "Completed workouts will appear here so you can see your weekly rhythm.")
             } else {
                 HStack {
                     StatTile(title: "This week", value: "\(thisWeekCount)", caption: thisWeekCount == 1 ? "workout" : "workouts")
                     StatTile(title: "4-week average", value: lastFourWeeksAverage.formatted(.number.precision(.fractionLength(0...1))), caption: "per week")
-                    if let last = recentSessions.first {
-                        StatTile(title: "Last workout", value: last.startedAt.formatted(.relative(presentation: .named)), caption: last.name)
-                    }
+                    StatTile(title: "Streak", value: streakText, caption: "weeks")
+                }
+                if let last = recentSessions.first {
+                    Text("Last workout: \(last.name), \(last.startedAt.formatted(.relative(presentation: .named)))")
+                        .formCaption()
                 }
             }
         }
@@ -293,7 +305,7 @@ private struct LatestBodyWeightCard: View {
             predicate: #Predicate<BodyMeasurement> { $0.kindRaw == kind },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        descriptor.fetchLimit = 1
+        descriptor.fetchLimit = 2
         _weights = Query(descriptor)
     }
 
@@ -305,11 +317,27 @@ private struct LatestBodyWeightCard: View {
             }
             if let latest = weights.first {
                 let unit = preferences.first?.weightUnit ?? .kilograms
-                StatTile(title: latest.date.formatted(date: .abbreviated, time: .omitted),
-                         value: NumberText.weight(kilograms: latest.value, unit: unit))
+                HStack {
+                    StatTile(title: latest.date.formatted(date: .abbreviated, time: .omitted),
+                             value: NumberText.weight(kilograms: latest.value, unit: unit))
+                    if weights.count > 1 {
+                        let previous = weights[1]
+                        StatTile(title: "Change",
+                                 value: signedWeight(latest.value - previous.value, unit: unit),
+                                 caption: "since \(previous.date.formatted(.dateTime.day().month(.abbreviated)))")
+                    }
+                }
+                Button("See trend") { router.select(.progress) }
+                    .font(.subheadline.weight(.medium))
             } else {
                 InlineNotice(symbol: "scalemass", text: "No body weight recorded yet.")
             }
         }
+    }
+
+    private func signedWeight(_ kilograms: Double, unit: WeightUnit) -> String {
+        let value = unit.fromKilograms(kilograms)
+        let sign = value > 0.05 ? "+" : (value < -0.05 ? "−" : "±")
+        return "\(sign)\(abs(value).formatted(.number.precision(.fractionLength(1)))) \(unit.symbol)"
     }
 }
