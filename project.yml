@@ -32,8 +32,11 @@ targets:
     platform: iOS
     sources:
       - path: Form
+      - path: Shared
     dependencies:
       - package: FormCore
+      - target: FormWidgets
+        embed: true
     entitlements:
       path: Form/Form.entitlements
       properties:
@@ -54,6 +57,7 @@ targets:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         FormAppGroupIdentifier: $(FORM_APP_GROUP)
+        NSSupportsLiveActivities: true
         CFBundleURLTypes:
           - CFBundleURLName: $(FORM_BUNDLE_ID)
             CFBundleURLSchemes:
@@ -67,6 +71,40 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: NO
+
+  FormWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FormWidgets
+      - path: Shared
+      # Design tokens and number formatting are shared with the app.
+      - path: Form/DesignSystem/Theme.swift
+      - path: Form/DesignSystem/NumberText.swift
+    dependencies:
+      - package: FormCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: FormWidgets/FormWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - $(FORM_APP_GROUP)
+    info:
+      path: FormWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Form
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        FormAppGroupIdentifier: $(FORM_APP_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_NAME: FormWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(FORM_BUNDLE_ID).widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
 
   FormTests:
     type: bundle.unit-test

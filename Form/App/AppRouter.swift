@@ -14,7 +14,7 @@ enum AppSheet: String, Identifiable {
 
 /// Owns tab selection and each tab's navigation path, so every tab keeps its
 /// own stack when you switch away and back. Also routes `form://` deep links,
-/// which widgets will use in Phase 5.
+/// used by widgets, the Live Activity and App Intents.
 @MainActor
 @Observable
 final class AppRouter {
@@ -26,6 +26,8 @@ final class AppRouter {
     var presentedSheet: AppSheet?
     /// Shows the in-progress workout full screen. Closing it keeps the workout running.
     var isActiveWorkoutPresented = false
+    /// Set by `form://start-workout`; `RootView` starts or resumes the workout and clears it.
+    var isStartWorkoutRequested = false
 
     /// Selecting the current tab again pops it to its root, matching system apps.
     func select(_ tab: AppTab) {
@@ -44,7 +46,7 @@ final class AppRouter {
         }
     }
 
-    /// Handles URLs such as `form://nutrition`, `form://workout` or `form://log-weight`.
+    /// Handles URLs such as `form://nutrition`, `form://workout`, `form://start-workout` or `form://log-weight`.
     /// Returns false for URLs Form does not understand.
     @discardableResult
     func handle(url: URL) -> Bool {
@@ -57,6 +59,9 @@ final class AppRouter {
         case "workout":
             selectedTab = .train
             isActiveWorkoutPresented = true
+        case "start-workout":
+            selectedTab = .train
+            isStartWorkoutRequested = true
         case "log-weight":
             selectedTab = .today
             presentedSheet = .logBodyWeight

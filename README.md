@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phases 1–4 of 7 (foundation, nutrition, workouts, progress).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: Phases 1–5 of 7 (foundation, nutrition, workouts, progress, widgets and Live Activities).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -25,20 +25,21 @@ A minimalist, offline-first iPhone app for tracking workouts, nutrition and body
    ```
    This creates `Form.xcodeproj` from `project.yml`. The project file is not committed; re-run `xcodegen generate` whenever you add or remove source files.
 3. Open `Form.xcodeproj`.
-4. Select the **Form** target › **Signing & Capabilities** and choose your **Team**. If Xcode reports that the bundle identifier is taken, change both `FORM_BUNDLE_ID` and `FORM_APP_GROUP` at the top of `project.yml` (for example `com.yourname.form` and `group.com.yourname.form`), then run `xcodegen generate` again.
+4. Select the **Form** target › **Signing & Capabilities** and choose your **Team**, then do the same for the **FormWidgets** target. If Xcode reports that the bundle identifier is taken, change both `FORM_BUNDLE_ID` and `FORM_APP_GROUP` at the top of `project.yml` (for example `com.yourname.form` and `group.com.yourname.form`), then run `xcodegen generate` again.
 5. Pick an iPhone simulator (for example iPhone 16) or your device and press **⌘R**.
+6. To try widgets, long-press the Home Screen › **Edit** › **Add Widget** › **Form**. To try the Live Activity, start a workout and lock the screen (or look at the Dynamic Island on iPhone 14 Pro and later). To debug the widget extension itself, choose the **FormWidgets** scheme Xcode creates and pick a widget kind when asked.
 
 On first launch Form creates its local database and seeds an editable exercise catalogue (54 exercises) and four starter routines. Nothing else is pre-filled: Today, Nutrition and Progress start empty.
 
 ### App Group note
 
-Form stores its database in the App Group container so the widget extension (Phase 5) can read it. Simulators always allow this. On a device, App Groups need a paid Apple Developer team; with a free personal team Form automatically falls back to its own app container and everything except widgets keeps working.
+Form keeps its database in the App Group container, and after every save it writes a small `widget-snapshot.json` there for the widgets. Widgets read only that snapshot and never open the database. Simulators always allow App Groups. On a device, App Groups need a paid Apple Developer team. A free personal team can't sign the App Group entitlement, so Xcode will report a signing error. In that case delete the two `com.apple.security.application-groups` entries (under the Form and FormWidgets targets) in `project.yml` and run `xcodegen generate` again. Form then falls back to its own app container: everything except the Home Screen and Lock Screen widgets keeps working, including the Live Activity, which the app updates directly.
 
 ## Tests
 
 There are two test suites.
 
-**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation, progress analytics (weekly and monthly counts with empty periods, weekly streaks, per-week averages, daily nutrition averages that skip unlogged days and missing values, chart selection).
+**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation, widget snapshot file round trip, stale-day and new-week resets, progress analytics (weekly and monthly counts with empty periods, weekly streaks, per-week averages, daily nutrition averages that skip unlogged days and missing values, chart selection).
 
 ```sh
 cd Packages/FormCore
@@ -47,7 +48,7 @@ swift test
 
 This also runs on Linux with a Swift 5.9+ toolchain. In Xcode you can open `Packages/FormCore/Package.swift` and press **⌘U**.
 
-**FormTests** (hosted in the app, uses SwiftData): active-workout restoration from a fresh context, rest timer start and pause, pause-excluded duration, volume and set counts, PR baselines and strict improvement, previous-session pre-fill, routine starts, reordering, skipping, discarding, history edits recalculating records; diary logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
+**FormTests** (hosted in the app, uses SwiftData): widget snapshots built from the store (empty store, today's diary, goal and weight, active workout and weekly counts), Live Activity state through pause and rest, the start-workout deep link and the spoken nutrition summary; active-workout restoration from a fresh context, rest timer start and pause, pause-excluded duration, volume and set counts, PR baselines and strict improvement, previous-session pre-fill, routine starts, reordering, skipping, discarding, history edits recalculating records; diary logging, editing, moving, duplicating, deleting and undoing diary entries; saved meals, including after a food is deleted; food editor validation; historical nutrition snapshots, missing values staying unspecified, deleting foods and exercises without losing history, cascade deletes, active-workout and rest-timer restoration, persistence across container launches, seeding idempotence, deep links and exercise search.
 
 In Xcode: choose the **Form** scheme and press **⌘U**. From the command line:
 
@@ -71,6 +72,8 @@ Form/
 │   │   ├── Timers.swift         Date-based RestTimer and WorkoutClock
 │   │   ├── Validation.swift     Locale-aware number parsing, name and date rules
 │   │   ├── TextSearch.swift     Case/diacritic-insensitive ranked search
+│   │   ├── ProgressAnalytics.swift Period counts, streaks, averages for charts
+│   │   ├── WidgetSnapshot.swift Today summary shared with widgets, and its file store
 │   │   └── DurationFormatting.swift
 │   └── Tests/FormCoreTests/
 ├── Form/                        The iOS app target (module name FormApp)
@@ -79,9 +82,11 @@ Form/
 │   │   └── Components/          Cards, buttons, rings, bars, macro summaries, empty states
 │   ├── Models/                  SwiftData models and their enums
 │   ├── Persistence/             Container setup, preferences, first-launch seed data
-│   ├── Platform/                HapticsManager
+│   ├── Platform/                Haptics, notifications, widget sync, Live Activity, App Intents
 │   ├── Features/                Today, Train, Nutrition, Progress, Settings, Shared
 │   └── Resources/               Asset catalogue
+├── Shared/                      Compiled into app and widgets: App Group, Live Activity attributes
+├── FormWidgets/                 WidgetKit extension: widgets and the workout Live Activity
 └── FormTests/                   App-hosted SwiftData tests
 ```
 
@@ -166,11 +171,22 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - **Charts** draw only recorded values. Tap or drag to see the exact value and date (with a selection haptic). Each chart has a VoiceOver summary or an Audio Graph descriptor.
 - **Today:** the consistency card now shows a weekly streak and links to Progress; the body-weight card shows the change since the previous entry.
 
+### Phase 5: done
+
+- **Widgets** (tap any to open the matching screen):
+  - *Nutrition*, small and medium: calories left or over with a ring, plus protein, carb and fat bars. Lock Screen circular, rectangular and inline versions too.
+  - *Training*, small: workouts this week, weekly streak and last workout, or the workout in progress with a live timer. Lock Screen circular and rectangular versions too.
+  - *Today*, large: nutrition, training, latest body weight, and Workout / Food / Weight buttons.
+- Widgets show only what you've saved. Before the app has shared any data they say "Open Form…", and values reset at midnight even if the app isn't opened. The widget gallery shows clearly labelled sample values.
+- **Live Activity** for the workout in progress, on the Lock Screen and in the Dynamic Island: workout name, elapsed time (frozen while paused), current exercise, completed sets, and the rest countdown with a progress bar. When the rest ends it shows "Rest over". The activity ends when you finish or discard the workout. Timers are drawn by iOS from dates, so they keep running while Form is suspended. Turn Live Activities off in iOS Settings › Form.
+- **App Intents and Siri:** Start Workout (starts an empty workout, or reopens the one in progress), Log Body Weight, Open Food Diary, and Today's Nutrition, which answers without opening the app ("So far today: 1,450 calories of 2,200…"). All four appear in Shortcuts and Spotlight with suggested Siri phrases.
+- New deep link `form://start-workout`.
+- Not included: buttons that change data from inside a widget or the Live Activity (for example "Skip rest"). Those would need the extension to write to the database, which Form avoids for now.
+
 ### Not yet implemented
 
 | Phase | Remaining work |
 |---|---|
-| 5 | WidgetKit extension (small, medium, large, Lock Screen), App Intents, Live Activities for the active workout and rest timer |
 | 6 | Optional reminders, JSON/CSV export, delete-all-data flow, further accessibility and error-handling passes, UI tests |
 | 7 | Visual polish, performance, device testing, release documentation |
 
