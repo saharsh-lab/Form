@@ -214,7 +214,7 @@ HealthKit, iCloud sync, Apple Watch, and widget or Live Activity buttons that ch
 
 ## Verification and limitations
 
-- **Compiled and tested on CI, not yet on a device.** The code was written without a local Mac. GitHub Actions now builds the app and widget extension with Xcode 16 for the iOS simulator and runs the FormCore, unit and UI tests on every pull request (see [Continuous integration](#continuous-integration)). The first CI run built everything cleanly and passed 46 of 47 app unit tests. The one failure (JSON export omitted `null`s) is fixed in the same PR.
+- **Compiled and tested on CI, not yet on a device.** The code was written without a local Mac. GitHub Actions now builds the app and widget extension with Xcode 16 for the iOS simulator and runs the FormCore, unit and UI tests on every pull request (see [Continuous integration](#continuous-integration)). CI is green: everything builds, and all FormCore tests, 47 app unit tests and 4 UI tests pass. The first run caught one real bug (the JSON export left out `null`s), which is fixed.
 - Not yet checked by a person on a device, in either theme, or at large Dynamic Type sizes. [docs/QA.md](docs/QA.md) is the checklist for that.
 - The app icon is a simple placeholder.
 - HealthKit is intentionally out of scope for the MVP.
