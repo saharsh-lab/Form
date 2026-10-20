@@ -2,7 +2,7 @@
 
 A minimalist, offline-first iPhone app for tracking workouts, nutrition and body measurements. Native Swift, SwiftUI and SwiftData, with no account, no server, no analytics and no AI. Every nutrition value is entered by the user.
 
-> **Status: Phases 1–3 of 7 (foundation, nutrition, workouts).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
+> **Status: Phases 1–4 of 7 (foundation, nutrition, workouts, progress).** See [Implementation status](#implementation-status) for exactly what works today and what is still to come.
 
 ## Requirements
 
@@ -38,7 +38,7 @@ Form stores its database in the App Group container so the widget extension (Pha
 
 There are two test suites.
 
-**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation.
+**FormCore** (pure Swift, no UIKit or SwiftData): food search ranking, unit conversion, serving-size scaling, daily totals, target progress, goal history, workout volume, personal records, rest timer and workout clock maths, input validation, progress analytics (weekly and monthly counts with empty periods, weekly streaks, per-week averages, daily nutrition averages that skip unlogged days and missing values, chart selection).
 
 ```sh
 cd Packages/FormCore
@@ -156,11 +156,20 @@ Relationship arrays in SwiftData are unordered, so ordered collections use a `so
 - **Exercise library:** create custom exercises and edit any exercise. Exercises with history are archived rather than deleted, and their tracking type is locked so records stay comparable.
 - **History:** completed workouts grouped by month. Open one to rename it, correct weights, reps and completion, add exercises or sets, or delete it; records recalculate from what remains.
 
+### Phase 4: done
+
+- **Progress tab** with Workouts, Exercises, Body and Nutrition sections and a 4W / 3M / 6M / 1Y / All range picker.
+- **Workouts:** workouts in range, average per week and weekly streak; workouts per week (short ranges) or per month (long ranges) as bars, including empty periods; volume per workout; recent personal records.
+- **Exercises:** every exercise you've logged, with session count. Each opens a chart of top weight, estimated 1RM, volume or best reps (or duration / distance, depending on the exercise), the date each current record was set, and the sessions behind the chart.
+- **Body:** body weight, body fat and each circumference as a chart with latest value, change over the range and entry count, plus the full history with edit and delete.
+- **Nutrition:** daily calories, protein, carbs and fat as bars with the current target line, a daily average over logged days only ("over N logged days"), and how many days hit the goal that was in effect on that day. Days with nothing logged are gaps, not zeros; days with missing values are called out as lower bounds.
+- **Charts** draw only recorded values. Tap or drag to see the exact value and date (with a selection haptic). Each chart has a VoiceOver summary or an Audio Graph descriptor.
+- **Today:** the consistency card now shows a weekly streak and links to Progress; the body-weight card shows the change since the previous entry.
+
 ### Not yet implemented
 
 | Phase | Remaining work |
 |---|---|
-| 4 | Swift Charts: workout counts, exercise history, volume, personal records, body weight and measurements, average calories and protein, consistency; date ranges and point selection |
 | 5 | WidgetKit extension (small, medium, large, Lock Screen), App Intents, Live Activities for the active workout and rest timer |
 | 6 | Optional reminders, JSON/CSV export, delete-all-data flow, further accessibility and error-handling passes, UI tests |
 | 7 | Visual polish, performance, device testing, release documentation |
