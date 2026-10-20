@@ -166,6 +166,22 @@ struct ExportDocument: Codable {
         struct Set: Codable {
             var kind: String; var weightKg: Double?; var reps: Int?; var durationSeconds: Double?; var distanceMeters: Double?
             var completed: Bool; var completedAt: Date?
+
+            enum CodingKeys: String, CodingKey {
+                case kind, weightKg, reps, durationSeconds, distanceMeters, completed, completedAt
+            }
+
+            /// Writes unentered values as explicit `null` (JSONEncoder would otherwise omit them).
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(kind, forKey: .kind)
+                try container.encode(weightKg, forKey: .weightKg)
+                try container.encode(reps, forKey: .reps)
+                try container.encode(durationSeconds, forKey: .durationSeconds)
+                try container.encode(distanceMeters, forKey: .distanceMeters)
+                try container.encode(completed, forKey: .completed)
+                try container.encode(completedAt, forKey: .completedAt)
+            }
         }
         struct Exercise: Codable {
             var exerciseID: UUID?; var name: String; var trackingType: String; var skipped: Bool; var notes: String; var sets: [Set]
@@ -178,6 +194,17 @@ struct ExportDocument: Codable {
         var calories: Double?; var protein: Double?; var carbohydrates: Double?; var fat: Double?
         init(_ values: NutritionValues) {
             calories = values.calories; protein = values.protein; carbohydrates = values.carbohydrates; fat = values.fat
+        }
+
+        enum CodingKeys: String, CodingKey { case calories, protein, carbohydrates, fat }
+
+        /// Writes unentered values as explicit `null` (JSONEncoder would otherwise omit them).
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(calories, forKey: .calories)
+            try container.encode(protein, forKey: .protein)
+            try container.encode(carbohydrates, forKey: .carbohydrates)
+            try container.encode(fat, forKey: .fat)
         }
     }
 
