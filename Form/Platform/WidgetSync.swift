@@ -3,7 +3,7 @@ import SwiftData
 import WidgetKit
 import FormCore
 
-/// Keeps widgets and the workout Live Activity in step with saved data.
+/// Keeps widgets, the workout Live Activity and the logging reminder in step with saved data.
 ///
 /// After each save the app writes a small JSON snapshot to the App Group
 /// container and asks WidgetKit to reload. Widgets read only that snapshot,
@@ -16,6 +16,7 @@ enum WidgetSync {
     static func refresh(context: ModelContext, now: Date = .now) {
         let snapshot = makeSnapshot(context: context, now: now)
         WorkoutLiveActivityController.shared.sync(with: WorkoutRepository(context: context).activeSession(), now: now)
+        ReminderSync.update(preferences: PreferencesStore.current(in: context), hasLoggedToday: snapshot.nutrition.entryCount > 0, now: now)
 
         guard let url = AppGroup.widgetSnapshotURL else { return }
         // Skip the write and reload when nothing a widget shows has changed.
